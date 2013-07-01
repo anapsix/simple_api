@@ -1,0 +1,11 @@
+# logs
+log
+logs
+*.log
+
+# pids
+*.pid
+
+# tmp
+tmp
+

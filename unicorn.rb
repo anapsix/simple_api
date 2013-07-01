@@ -8,8 +8,8 @@ working_directory File.expand_path(File.dirname(@service_dir/..))
 
 timeout 30
 
-@logdir = @service_dir
-@tmpdir = @service_dir
+@log_dir = @service_dir
+@tmp_dir = @service_dir
 
 # Specify path to socket unicorn listens to, 
 # we will use this in our nginx.conf later
@@ -20,5 +20,5 @@ listen 8888, :tcp_nopush => true
 pid "#{@service_dir}/unicorn.pid"
 
 # Set log file paths
-stderr_path "#{@service_dir}/unicorn.stderr.log"
-stdout_path "#{@service_dir}/unicorn.stdout.log"
+stderr_path "#{@log_dir}/unicorn.stderr.log"
+stdout_path "#{@tmp_dir}/unicorn.stdout.log"
