@@ -1,6 +1,11 @@
 require "rubygems"
 require "sinatra/base"
 require "json"
+begin
+  require "googlecharts"
+rescue LoadError
+  puts 'googlecharts gem is not installed, moving on..'
+end
 
 class MyAPI < Sinatra::Base
 
@@ -37,8 +42,15 @@ class MyAPI < Sinatra::Base
     msg << "<p>Last 3 lines of output of directory listing for / in JSON<pre>#{JSON.pretty_generate($o)}</pre>"
     msg << "<br>"
     msg << "<p>Request params array: <pre>#{JSON.pretty_generate(params)}</pre>"
+    chart = Gchart.bar( :data => [[1,2,4,67,100,41,234],[45,23,67,12,67,300, 250]],
+            :title => 'Ruby Fu level',
+            :legend => ['matt','patrick'],
+            :bg => {:color => 'CCCCCC', :type => 'gradient'},
+            :bar_colors => 'cc0000,00cc00') if defined?(Gchart)
+    msg << "<p>Google Chart example using \"googlechart\" gem:<br><img src=#{chart}>" if defined?(Gchart)
     msg << "<p>Sinatra Documentation can be found here: <a href='http://www.sinatrarb.com/faq.html'>http://www.sinatrarb.com/faq.html</a>"
     msg
   end
+
 
 end
