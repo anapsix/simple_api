@@ -1,0 +1,95 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:        api_server
+# Required-Start:  $network $remote_fs $syslog
+# Required-Stop:   $network $remote_fs $syslog
+# Default-Start:   2 3 4 5
+# Default-Stop: 
+# Short-Description: Start API server
+### END INIT INFO
+
+NAME="API Server"
+export LISTEN_PORT=8888
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/var/lib/gems/1.9.1/bin:/usr/local/bin
+# a way to figure out a service home  directory, no matter where it's called from
+self_path="$(readlink -e $0)"
+DIR="${self_path%%/${self_path##*/}}"
+PRODUCT_HOME=${DIR%/*}
+API_HOME=${DIR}
+
+PIDFILE=$API_HOME/tmp/unicorn.pid
+
+. /lib/lsb/init-functions
+
+cd $API_HOME
+
+[ -r $API_HOME/tmp ] || mkdir $API_HOME/tmp
+[ -r $API_HOME/log ] || mkdir $API_HOME/log
+
+. /lib/lsb/init-functions
+
+cd $API_HOME
+
+[ -r $API_HOME/tmp ] || mkdir $API_HOME/tmp
+[ -r $API_HOME/log ] || mkdir $API_HOME/log
+
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+PURPLE='\e[1;35m'
+NC='\e[0m'
+
+case $1 in
+  start)
+    if ! $0 status > /dev/null 2>&1; then
+      log_daemon_msg "Starting ${NAME}" "unicorn"
+       unicorn -E production -D -c ./unicorn.rb
+      log_end_msg $?
+    else
+      /bin/echo -e "${NAME} is ${GREEN}already running${NC}" >&2
+    fi
+  ;;
+  stop)
+    if $0 status > /dev/null 2>&1; then
+      log_daemon_msg "Stopping ${NAME}" "unicorn"
+       kill $(cat $PIDFILE)
+       log_end_msg $?
+       rm -f $PIDFILE
+    else
+      log_daemon_msg "${NAME}" "is not running"
+      log_end_msg $?
+    fi
+  ;;
+  restart)
+    $0 stop
+    sleep 2
+    $0 start
+  ;;
+  reload)
+    if $0 status > /dev/null 2>&1; then
+      log_daemon_msg "Reloading ${NAME}" "unicorn"
+       kill -USR2 $(cat $PIDFILE)
+       log_end_msg $?
+    else
+      log_daemon_msg "${NAME}" "is not running"
+      log_end_msg $?
+    fi
+  ;;
+  status)
+   /bin/echo -en "${NAME} is.. " >&2
+   if [ ! -r $PIDFILE ]; then
+     /bin/echo -e "${RED}not running${NC}" >&2
+     exit 1
+   elif ( kill -0 $(cat $PIDFILE) ); then
+     /bin/echo -e "${GREEN}running${NC}" >&2
+   fi
+  ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}" >&2
+    exit 2
+  ;;
+esac
+
+exit 0
