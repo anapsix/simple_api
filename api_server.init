@@ -12,6 +12,13 @@
 NAME="API Server"
 export LISTEN_PORT=8888
 
+# detect DOCKER
+if [ "$container" == "lxc" ]; then
+	DAEMON_FLAG="-D"
+else
+	DAEMON_FLAG=""
+fi
+
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/var/lib/gems/1.9.1/bin:/usr/local/bin
 # a way to figure out a service home  directory, no matter where it's called from
 self_path="$(readlink -e $0)"
@@ -45,7 +52,7 @@ case $1 in
   start)
     if ! $0 status > /dev/null 2>&1; then
       log_daemon_msg "Starting ${NAME}" "unicorn"
-       unicorn -E production -D -c ./unicorn.rb
+       unicorn -E production $DAEMON_FLAG -c ./unicorn.rb
       log_end_msg $?
     else
       /bin/echo -e "${NAME} is ${GREEN}already running${NC}" >&2
