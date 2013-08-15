@@ -10,7 +10,9 @@
 ### END INIT INFO
 
 NAME="API Server"
-export LISTEN_PORT=8888
+LISTEN_PORT=8888
+
+export LISTEN_PORT
 
 # detect DOCKER
 if [ "$container" == "lxc" ]; then
