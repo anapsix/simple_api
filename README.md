@@ -12,15 +12,16 @@
 ## Starting/Stopping API Server via INIT script
   you can change API port and service name in api\_server.init from it's defaults
 
-   NAME="API Server"
-   LISTEN\_PORT=8888
+     NAME="API Server"
+     LISTEN_PORT=8888
 
   start it with
 
-    ./api\_server.init start
+    ./api_server.init start
 
   stop it with
-    ./api\_server.init stop
+
+    ./api_server.init stop
 
 ## Accessing Sample API via WebBrowser or CURL
   when running on your local machine use the following URL
