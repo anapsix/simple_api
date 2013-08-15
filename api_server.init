@@ -14,9 +14,9 @@ export LISTEN_PORT=8888
 
 # detect DOCKER
 if [ "$container" == "lxc" ]; then
-	DAEMON_FLAG="-D"
-else
 	DAEMON_FLAG=""
+else
+	DAEMON_FLAG="-D"
 fi
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/var/lib/gems/1.9.1/bin:/usr/local/bin
