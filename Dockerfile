@@ -8,7 +8,7 @@ RUN apt-get install ruby1.9.1 ruby1.9.1-dev build-essential -y
 RUN gem1.9.1 install sinatra json unicorn --no-ri --no-rdoc
 
 # Bundle app source
-ADD . /opt/simple_api
+ADD . /srv/simple_api
 
 EXPOSE  8888
-CMD ["/opt/simple_api/api_server.init", "restart"]
+CMD ["/srv/simple_api/api_server.init", "restart"]
