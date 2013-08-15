@@ -1,11 +1,28 @@
 #!/bin/bash
 
+###### begin user configurable options ######
+
 DEBUG=true
 
 APP_LAUNCH="api_server.init restart"
 APP_PORT=8888
 EXPOSED_PORT=8888
 DOCKER_IMAGE='ruby1.9/sinatra'
+
+####### end user configurable options #######
+
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+PURPLE='\e[1;35m'
+NC='\e[0m'
+
+echo -e "${YELLOW}WARNING:${NC} this script requires running few things root"
+echo "We are going to test if you can run sudo now.."
+if [ "$(sudo id -u)" != "0" ]; then
+  echo -e "${RED}FATAL:${NC} sorry, you failed \"sudo\" check, bailing.."
+  exit 1
+fi
 
 self_path="$(readlink -e $0)"
 APP_DIR="${self_path%%/${self_path##*/}}"
@@ -29,7 +46,6 @@ function image_present() {
 	fi
 	return 1
 }
-
 
 function image_build() {
 	image="$1"
@@ -77,9 +93,66 @@ if $DEBUG; then
 	echo "Aplication name: ${APP_NAME}"
 fi
 
-# launch container
-sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH}
+function start_app() {
+	instance_id=$(sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
+	return $?
+}
 
+function stop_app() {
+	instance_id=$(sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
+	return $?
+}
 
+function restart_app() {
+	instance_id=$(sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
+	return $?
+}
+
+case "$1" in
+  start)
+	echo -n "Starting ${APP_NAME}: " >&2
+	if start_app
+		/bin/echo -e " ${GREEN}OK${NC}" >&2
+	else
+		/bin/echo -e " ${RED}failed${NC}" >&2
+	fi
+	;;
+  stop)
+	echo -n "Stopping ${APP_NAME}: " >&2
+	if stop_app
+		/bin/echo -e " ${GREEN}OK${NC}" >&2
+	else
+		/bin/echo -e " ${RED}failed${NC}" >&2
+	fi
+	rm -f $PIDFILE
+	;;
+
+  restart|force-reload)
+	#
+	#	If the "reload" option is implemented, move the "force-reload"
+	#	option to the "reload" entry above. If not, "force-reload" is
+	#	just the same as "restart".
+	#
+	echo -n "Stopping ${APP_NAME}: " >&2
+	if stop_app
+		/bin/echo -e " ${GREEN}OK${NC}" >&2
+	else
+		/bin/echo -e " ${RED}failed${NC}" >&2
+	fi
+	;;
+  status)
+	if check_app_status
+		/bin/echo -e " ${GREEN}OK${NC}" >&2
+	else
+		/bin/echo -e " ${RED}failed${NC}" >&2
+	fi
+	;;
+  *)
+	echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
+	exit 1
+	;;
+esac
+
+# EOF
 
 # EOF
