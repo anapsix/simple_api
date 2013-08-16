@@ -11,33 +11,23 @@
 
 NAME="API Server"
 LISTEN_PORT=8888
+SERVER="thin" # only unicorn and thin are supported at the moment.. feel free to add more
 
 export LISTEN_PORT
 
-# detect DOCKER
+# detect DOCKER and use thin SERVER
 if [ "$container" == "lxc" ]; then
-	DAEMON_FLAG=""
-else
-	DAEMON_FLAG="-D"
+	SERVER="thin"
 fi
 
+. /lib/lsb/init-functions
+
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/var/lib/gems/1.9.1/bin:/usr/local/bin
-# a way to figure out a service home  directory, no matter where it's called from
+# a way to figure out a service home directory, no matter where it's called from
 self_path="$(readlink -e $0)"
 DIR="${self_path%%/${self_path##*/}}"
 PRODUCT_HOME=${DIR%/*}
 API_HOME=${DIR}
-
-PIDFILE=$API_HOME/tmp/unicorn.pid
-
-. /lib/lsb/init-functions
-
-cd $API_HOME
-
-[ -r $API_HOME/tmp ] || mkdir $API_HOME/tmp
-[ -r $API_HOME/log ] || mkdir $API_HOME/log
-
-. /lib/lsb/init-functions
 
 cd $API_HOME
 
@@ -50,24 +40,89 @@ YELLOW='\e[1;33m'
 PURPLE='\e[1;35m'
 NC='\e[0m'
 
+# customize few things per server
+case $SERVER in
+  unicorn)
+    [ "$container" == "lxc" ] && DAEMON_FLAG="" || DAEMON_FLAG="-D"
+    PIDFILE=$API_HOME/tmp/unicorn.pid
+
+    function start_server() {
+      unicorn -E production $DAEMON_FLAG -c ./unicorn.rb
+      return $?
+    }
+    function stop_server() {
+      kill $(cat $PIDFILE)
+      RETVAL=$?
+      rm -f $PIDFILE
+      return $RETVAL
+    }
+    function reload_server() {
+      kill -USR2 $(cat $PIDFILE)
+    }
+    function status_server() {
+      if [ ! -r $PIDFILE ]; then
+        return 1
+      elif ( kill -0 $(cat $PIDFILE) 2>/dev/null); then
+        return 0
+      else
+        rm -f $PIDFILE
+        return 1
+      fi
+    }
+  ;;
+  thin)
+    [ "$container" == "lxc" ] && DAEMON_FLAG="" || DAEMON_FLAG="-d"
+    PIDFILE=$API_HOME/tmp/thin.pid
+    LOGFILE=$API_HOME/log/thin.log
+
+    function start_server() {
+      thin start -e ${ENVIRONMENT:-development} $DAEMON_FLAG --port ${LISTEN_PORT:-8888} --log $LOGFILE --pid $PIDFILE
+      return $?
+    }
+    function stop_server() {
+      kill $(cat $PIDFILE)
+      RETVAL=$?
+      rm -f $PIDFILE
+      return $RETVAL
+    }
+    function reload_server() {
+      kill -USR2 $(cat $PIDFILE)
+    }
+    function status_server() {
+      if [ ! -r $PIDFILE ]; then
+        return 1
+      elif ( kill -0 $(cat $PIDFILE) 2>/dev/null); then
+        return 0
+      else
+        rm -f $PIDFILE
+        return 1
+      fi
+    }
+  ;;
+  *)
+    echo "${SERVER} not supported, bailing..."
+    exit 1
+  ;;
+esac
+
 case $1 in
   start)
-    if ! $0 status > /dev/null 2>&1; then
-      log_daemon_msg "Starting ${NAME}" "unicorn"
-       unicorn -E production $DAEMON_FLAG -c ./unicorn.rb
-      log_end_msg $?
-    else
+    if $0 status > /dev/null 2>&1; then
       /bin/echo -e "${NAME} is ${GREEN}already running${NC}" >&2
+      exit 0
+    else
+      log_daemon_msg "Starting ${NAME}" ${SERVER}
+      start_server
+      log_end_msg $?
     fi
   ;;
   stop)
     if $0 status > /dev/null 2>&1; then
-      log_daemon_msg "Stopping ${NAME}" "unicorn"
-       kill $(cat $PIDFILE)
-       log_end_msg $?
-       rm -f $PIDFILE
+      log_daemon_msg "Stopping ${NAME}" ${SERVER}
+      stop_server
+      log_end_msg $?
     else
-      log_daemon_msg "${NAME}" "is not running"
+      log_daemon_msg "${NAME}/${SERVER}" "is not running"
       log_end_msg $?
     fi
   ;;
@@ -78,21 +133,22 @@ case $1 in
   ;;
   reload)
     if $0 status > /dev/null 2>&1; then
-      log_daemon_msg "Reloading ${NAME}" "unicorn"
-       kill -USR2 $(cat $PIDFILE)
-       log_end_msg $?
+      log_daemon_msg "Reloading ${NAME}" ${SERVER}
+      reload_server
+      log_end_msg $?
     else
-      log_daemon_msg "${NAME}" "is not running"
+      log_daemon_msg "${NAME}/${SERVER}" "is not running"
       log_end_msg $?
     fi
   ;;
   status)
    /bin/echo -en "${NAME} is.. " >&2
-   if [ ! -r $PIDFILE ]; then
+   if status_server; then
+     /bin/echo -e "${GREEN}running${NC}" >&2
+     exit 0
+   else
      /bin/echo -e "${RED}not running${NC}" >&2
      exit 1
-   elif ( kill -0 $(cat $PIDFILE) ); then
-     /bin/echo -e "${GREEN}running${NC}" >&2
    fi
   ;;
   *)
