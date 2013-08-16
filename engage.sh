@@ -31,33 +31,56 @@ APP_NAME=${APP_DIR##*/}
 go_ver=$(go version 2>/dev/null | grep -Po '(\d+\.?)+[^amd64]' || echo missing)
 docker_bin=$(which docker || echo missing) # detect docker binary
 
+#
+missing_packages=()
+
+function check_bin() {
+	_bin=${1%:*}
+	_package=${1/${1%:*}}
+	[ -z $_package ] && _package=${2} || _package=${bin}
+	which $_bin >/dev/null || missing_packages+=( $_package )
+}
+
+for _bin in curl git make:build-essential tee:coreutils; do
+	check_bin $_bin
+done
+
 function mount_cgroup() {
 	if ! grep -q '/cgroup' /etc/mtab; then
-		echo -e "#mount cgroup\nnone  /cgroup  cgroup  defaults  0 0" | tee -a /etc/fstab >/dev/null
-		sudo mount /cgroup && return 0 || return 1
+		echo -e "#mount cgroup\nnone  /cgroup  cgroup  defaults  0 0" | sudo tee -a /etc/fstab >/dev/null
+		sudo mount /cgroup 2>/dev/null && return 0 || return 1
 	fi
+}
+
+function install_go() {
+	echo "Getting Debian version of GO from: https://github.com/dotcloud/docker-debian" >&2
+	curl -s https://godeb.s3.amazonaws.com/godeb-amd64.tar.gz | tar -zx -C /tmp
+	sudo /tmp/godeb install
+	return $?
 }
 
 function install_docker() {
 	echo "Getting Debian version of Docker from: https://github.com/dotcloud/docker-debian" >&2
-  sudo git clone https://github.com/dotcloud/docker-debian /tmp/docker-debian
+  sudo git clone https://github.com/dotcloud/docker-debian.git /tmp/docker-debian
 	cd /tmp/docker-debian
 	sudo make VERBOSE=1
+	RETVAL=$?
 	sudo cp /tmp/docker-debian/bin/docker /usr/local/bin/docker
   mount_cgroup
+	return $RETVAL
 }
 
 function image_present() {
-	image="$1"
-	if $docker_bin images | grep -q "${image//./\\.}"; then
+	_image="$1"
+	if $docker_bin images | grep -q "${_image//./\\.}"; then
 		return 0
 	fi
 	return 1
 }
 
 function image_build() {
-	image="$1"
-	if sudo $docker_bin build -t "${image}" ${APP_DIR};then
+	_image="$1"
+	if sudo $docker_bin build -t "${_image}" ${APP_DIR};then
 		return 0
 	else
 		return 1
@@ -73,6 +96,9 @@ if [ "${docker_bin}" == "missing" ]; then
 
 	case "$doit" in
 	  y|Y)
+			# install missing packages if any
+			[ -z $missing_packages ] || apt-get install -y ${missing_packages[@]}
+
 			if [ "${go_ver}" == "missing" ]; then
 				if install_go; then
 					echo "GO installed.." >&2
@@ -121,8 +147,8 @@ function start_app() {
 		-p ${EXPOSED_PORT}:${APP_PORT} \
 		-e container=lxc \
 		-d -v ${APP_DIR}:/srv/${APP_NAME} \
-		-t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
-	instance_file="/var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id"
+		-t ${DOCKER_IMAGE} /srv/${APP_NAME}/${APP_LAUNCH})
+	instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 	RETVAL=$?
 	echo $instance_id > $instance_file
 	return $RETVAL
@@ -130,8 +156,8 @@ function start_app() {
 }
 
 function stop_app() {
-	if [ -r /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id ]; then
-		instance_file="/var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id"
+	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 		$instance_id=$(cat $instance_file)
 		sudo $docker_bin stop $instance_id
 		return $?
@@ -141,8 +167,8 @@ function stop_app() {
 }
 
 function restart_app() {
-	if [ -r /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id ]; then
-		$instance_id=$(cat /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id)
+	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		$instance_id=$(cat /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id)
 		sudo $docker_bin restart $instance_id
 		return $?
 	else
@@ -151,13 +177,13 @@ function restart_app() {
 }
 
 function check_app_status() {
-	if [ -r /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id ]; then
-		instance_file="/var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id"
+	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 		instance_id=$(cat $instance_file)
-		if $docker_bin ps | grep -q $instance_id; then
+		if $docker_bin ps | grep -q ${instance_id:-missing_id}; then
 			return 0
 		else
-			rm $instance_file
+			rm $instance_file 2>/dev/null
 			return 1
 		fi
 	else
