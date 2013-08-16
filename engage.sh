@@ -67,12 +67,14 @@ function install_docker() {
 	RETVAL=$?
 	sudo cp /tmp/docker-debian/bin/docker /usr/local/bin/docker
   mount_cgroup
+	sudo sysctl net.ipv4.conf.all.forwarding=1
+	echo net.ipv4.conf.all.forwarding=1 | sudo tee /etc/sysctl.d/net.ipv4.forwarding.conf 2>/dev/null
 	return $RETVAL
 }
 
 function image_present() {
 	_image="$1"
-	if $docker_bin images | grep -q "${_image//./\\.}"; then
+	if sudo $docker_bin images | grep -q "${_image//./\\.}"; then
 		return 0
 	fi
 	return 1
@@ -158,7 +160,7 @@ function start_app() {
 function stop_app() {
 	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
 		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
-		$instance_id=$(cat $instance_file)
+		instance_id=$(cat $instance_file)
 		sudo $docker_bin stop $instance_id
 		return $?
 	else
@@ -168,7 +170,7 @@ function stop_app() {
 
 function restart_app() {
 	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
-		$instance_id=$(cat /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id)
+		instance_id=$(cat /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id)
 		sudo $docker_bin restart $instance_id
 		return $?
 	else
@@ -180,7 +182,7 @@ function check_app_status() {
 	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
 		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 		instance_id=$(cat $instance_file)
-		if $docker_bin ps | grep -q ${instance_id:-missing_id}; then
+		if sudo docker_bin ps | grep -q ${instance_id:-missing_id}; then
 			return 0
 		else
 			rm $instance_file 2>/dev/null
