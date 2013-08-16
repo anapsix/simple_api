@@ -14,6 +14,7 @@
 
      NAME="API Server"
      LISTEN_PORT=8888
+     SERVER="thin" # unicorn or thin supported
 
   start it with
 
@@ -23,24 +24,27 @@
 
     ./api_server.init stop
 
-## Accessing Sample API via WebBrowser or CURL
+## Accessing API via WebBrowser or CURL
   when running on your local machine use the following URL
 
-    http://localhost:8080
+    http://localhost:8888
 
   replace _"localhost"_ with IP/hostname of the machine you've started the service on
 
-## Starting UNICORN manually
+## Starting/Stopping UNICORN manually
     export PATH=$PATH:/var/lib/gems/1.9.1/bin
-    unicorn -E development -l 0.0.0.0:8080
+    unicorn -E development -l 0.0.0.0:8888
 
   you can have Unicorn daemonize itself with _"-D"_ flag
 
-      unicorn -E development -D -l 0.0.0.0:8080
+      unicorn -E development -D -l 0.0.0.0:8888
 
-## Stopping UNICORN 
-  to stop your instance or use [CRTL-C] when it's running in foreground
+  to stop your instance either use _pkill_ or use [CRTL-C] when it's running in foreground
 
     pkill unicorn
 
+## Linux Containers and Docker
+  you can launch your API Server in a LXC with Docker
+  check out _engage.sh_
 
+    ./engage.sh [start|stop|restart|status]
