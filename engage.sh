@@ -17,10 +17,10 @@ YELLOW='\e[1;33m'
 PURPLE='\e[1;35m'
 NC='\e[0m'
 
-echo -e "${YELLOW}WARNING:${NC} this script requires running few things root"
-echo "We are going to test if you can run sudo now.."
+echo -e "${YELLOW}WARNING:${NC} this script requires running few things root" >&2
+echo "We are going to test if you can run sudo now.." >&2
 if [ "$(sudo id -u)" != "0" ]; then
-  echo -e "${RED}FATAL:${NC} sorry, you failed \"sudo\" check, bailing.."
+  echo -e "${RED}FATAL:${NC} sorry, you failed \"sudo\" check, bailing.." >&2
   exit 1
 fi
 
@@ -31,12 +31,20 @@ APP_NAME=${APP_DIR##*/}
 go_ver=$(go version 2>/dev/null | grep -Po '(\d+\.?)+[^amd64]' || echo missing)
 docker_bin=$(which docker || echo missing) # detect docker binary
 
-function docker_missing() {
-	echo "Debian version of Docker could be obtained from: https://github.com/dotcloud/docker-debian"
-  echo "sudo git clone https://github.com/dotcloud/docker-debian /tmp/docker-debian"
-	echo "cd /tmp/docker-debian"
-	echo "sudo make VERBOSE=1"
-	echo "sudo cp /tmp/docker-debian/bin/docker /usr/local/bin/docker"
+function mount_cgroup() {
+	if ! grep -q '/cgroup' /etc/mtab; then
+		echo -e "#mount cgroup\nnone  /cgroup  cgroup  defaults  0 0" | tee -a /etc/fstab >/dev/null
+		sudo mount /cgroup && return 0 || return 1
+	fi
+}
+
+function install_docker() {
+	echo "Getting Debian version of Docker from: https://github.com/dotcloud/docker-debian" >&2
+  sudo git clone https://github.com/dotcloud/docker-debian /tmp/docker-debian
+	cd /tmp/docker-debian
+	sudo make VERBOSE=1
+	sudo cp /tmp/docker-debian/bin/docker /usr/local/bin/docker
+  mount_cgroup
 }
 
 function image_present() {
@@ -56,103 +64,163 @@ function image_build() {
 	fi
 }
 
-function mount_cgroup() {
-	if ! grep '/cgroup' /etc/mtab; then
-		echo -e "#mount cgroup\nnone  /cgroup  cgroup  defaults  0 0" | tee -a /etc/fstab >/dev/null
-		sudo mount /cgroup && return 0 || return 1
-	fi
-}
-
 if [ "${docker_bin}" == "missing" ]; then
-	echo "Could not find Docker (http://docker.io) in PATH ($PATH), Docker is required to continue.."
-	docker_missing
-	if [ "${go_ver}" == "missing" ]; then
-		echo "You are missing GO.."
-		echo "Follow instructions here: http://blog.labix.org/2013/06/15/in-flight-deb-packages-of-go"
+	echo "Could not find Docker (http://docker.io) in PATH ($PATH), Docker is required to continue.." >&2
+	if ! read -t 5 -n1 -p "Install it automatically? [y/N] " doit; then
+		echo "\nIndecisive, eh?" >&2
+		exit 1
 	fi
-	exit 1
+
+	case "$doit" in
+	  y|Y)
+			if [ "${go_ver}" == "missing" ]; then
+				if install_go; then
+					echo "GO installed.." >&2
+				else
+					echo "Failed to install GO, try it manually via http://blog.labix.org/2013/06/15/in-flight-deb-packages-of-go" >&2
+					exit 1
+				fi
+			fi
+			if install_docker; then
+				echo "Docker installed.." >&2
+			else
+				echo "Failed to install Docker, try it manuall via https://github.com/dotcloud/docker-debian" >&2
+				exit 1
+			fi
+		;;
+		*)
+			echo "Didn't want to do it anyway, bailing.." >&2
+			exit 1
+		;;
+	esac
 fi
 
 if ! mount_cgroup; then
-	echo "Could not mount CGROUP, bailing.."
+	echo "Could not mount CGROUP, bailing.." >&2
 	exit 1
 fi
 
 if ! image_present ${DOCKER_IMAGE}; then
-	echo "Required Docker image \"${DOCKER_IMAGE}\" is missing.."
-	echo "Gonna try building it.."
+	echo "Required Docker image \"${DOCKER_IMAGE}\" is missing.." >&2
+	echo "Gonna try building it.." >&2
 	if image_build ${DOCKER_IMAGE}; then
+		echo "Image ${DOCKER_IMAGE} has been built successfully."
 	else
-		echo "Image build failed, bailing.."
+		echo "Image build failed, bailing.." >&2
 		exit 1
-	if
+	fi
 fi
 
 if $DEBUG; then	
-	echo "Aplication directory: ${APP_DIR}"
-	echo "Aplication name: ${APP_NAME}"
+	echo "Aplication directory: ${APP_DIR}" >&2
+	echo "Aplication name: ${APP_NAME}" >&2
 fi
 
 function start_app() {
-	instance_id=$(sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
-	return $?
+	instance_id=$(sudo $docker_bin run \
+		-p ${EXPOSED_PORT}:${APP_PORT} \
+		-e container=lxc \
+		-d -v ${APP_DIR}:/srv/${APP_NAME} \
+		-t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
+	instance_file="/var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id"
+	RETVAL=$?
+	echo $instance_id > $instance_file
+	return $RETVAL
+
 }
 
 function stop_app() {
-	instance_id=$(sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
-	return $?
+	if [ -r /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		instance_file="/var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id"
+		$instance_id=$(cat $instance_file)
+		sudo $docker_bin stop $instance_id
+		return $?
+	else
+		return 1
+	fi
 }
 
 function restart_app() {
-	instance_id=$(sudo $docker_bin run -p ${EXPOSED_PORT}:${APP_PORT} -d -v ${APP_DIR}:/srv/${APP_NAME} -t ruby1.9/sinatra /srv/${APP_NAME}/${APP_LAUNCH})
-	return $?
+	if [ -r /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		$instance_id=$(cat /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id)
+		sudo $docker_bin restart $instance_id
+		return $?
+	else
+		return 1
+	fi
+}
+
+function check_app_status() {
+	if [ -r /var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		instance_file="/var/tmp/$APP_NAME_${EXPOSED_PORT}_${APP_PORT}.id"
+		instance_id=$(cat $instance_file)
+		if $docker_bin ps | grep -q $instance_id; then
+			return 0
+		else
+			rm $instance_file
+			return 1
+		fi
+	else
+		return 1
+	fi
 }
 
 case "$1" in
   start)
-	echo -n "Starting ${APP_NAME}: " >&2
-	if start_app
-		/bin/echo -e " ${GREEN}OK${NC}" >&2
-	else
-		/bin/echo -e " ${RED}failed${NC}" >&2
-	fi
+		if check_app_status; then
+			/bin/echo -e "${APP_NAME^^} is ${GREEN}already running${NC} (${instance_id})" >&2
+		else
+			echo -n "Starting ${APP_NAME^^}: " >&2
+			if start_app; then
+				/bin/echo -e " ${GREEN}OK${NC} (${instance_id})" >&2
+				exit 0
+			else
+				/bin/echo -e " ${RED}failed${NC}" >&2
+				exit 1
+			fi
+		fi
 	;;
   stop)
-	echo -n "Stopping ${APP_NAME}: " >&2
-	if stop_app
-		/bin/echo -e " ${GREEN}OK${NC}" >&2
-	else
-		/bin/echo -e " ${RED}failed${NC}" >&2
-	fi
-	rm -f $PIDFILE
+		if check_app_status; then
+			echo -n "Stopping ${APP_NAME^^} (${instance_id}): " >&2
+			if stop_app; then
+				/bin/echo -e " ${GREEN}OK${NC}" >&2
+				exit 0
+			else
+				/bin/echo -e " ${RED}failed${NC}" >&2
+				exit 1
+			fi
+		else
+			/bin/echo -e "${APP_NAME^^} is ${RED}not running${NC}" >&2
+			exit 1
+		fi
 	;;
 
   restart|force-reload)
-	#
-	#	If the "reload" option is implemented, move the "force-reload"
-	#	option to the "reload" entry above. If not, "force-reload" is
-	#	just the same as "restart".
-	#
-	echo -n "Stopping ${APP_NAME}: " >&2
-	if stop_app
-		/bin/echo -e " ${GREEN}OK${NC}" >&2
-	else
-		/bin/echo -e " ${RED}failed${NC}" >&2
-	fi
+		echo -n "Restarting ${APP_NAME^^} (${instance_id}): " >&2
+		if restart_app; then
+			/bin/echo -e " ${GREEN}OK${NC}" >&2
+			exit 0
+		else
+			/bin/echo -e " ${RED}failed${NC}" >&2
+			exit 1
+		fi
 	;;
   status)
-	if check_app_status
-		/bin/echo -e " ${GREEN}OK${NC}" >&2
-	else
-		/bin/echo -e " ${RED}failed${NC}" >&2
-	fi
+		/bin/echo -en "${APP_NAME^^} is.. " >&2
+		if check_app_status; then
+			/bin/echo -e " ${GREEN}running${NC} (${instance_id})" >&2
+			exit 0
+		else
+			/bin/echo -e " ${RED}not running${NC}" >&2
+			exit 1
+		fi
 	;;
   *)
-	echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
-	exit 1
+		echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
+		exit 1
 	;;
 esac
 
-# EOF
-
+exit 0
 # EOF
