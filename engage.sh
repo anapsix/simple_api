@@ -61,12 +61,12 @@ function install_go() {
 
 function install_docker() {
 	echo "Getting Debian version of Docker from: https://github.com/dotcloud/docker-debian" >&2
-  sudo git clone https://github.com/dotcloud/docker-debian.git /tmp/docker-debian
+	sudo git clone https://github.com/dotcloud/docker-debian.git /tmp/docker-debian
 	cd /tmp/docker-debian
 	sudo make VERBOSE=1
 	RETVAL=$?
 	sudo cp /tmp/docker-debian/bin/docker /usr/local/bin/docker
-  mount_cgroup
+	mount_cgroup
 	sudo sysctl net.ipv4.conf.all.forwarding=1
 	echo net.ipv4.conf.all.forwarding=1 | sudo tee /etc/sysctl.d/net.ipv4.forwarding.conf 2>/dev/null
 	return $RETVAL
@@ -194,7 +194,7 @@ function check_app_status() {
 }
 
 case "$1" in
-  start)
+	start)
 		if check_app_status; then
 			/bin/echo -e "${APP_NAME^^} is ${GREEN}already running${NC} (${instance_id})" >&2
 		else
@@ -208,7 +208,7 @@ case "$1" in
 			fi
 		fi
 	;;
-  stop)
+	stop)
 		if check_app_status; then
 			echo -n "Stopping ${APP_NAME^^} (${instance_id}): " >&2
 			if stop_app; then
@@ -224,7 +224,7 @@ case "$1" in
 		fi
 	;;
 
-  restart|force-reload)
+	restart|force-reload)
 		echo -n "Restarting ${APP_NAME^^} (${instance_id}): " >&2
 		if restart_app; then
 			/bin/echo -e " ${GREEN}OK${NC}" >&2
@@ -234,7 +234,7 @@ case "$1" in
 			exit 1
 		fi
 	;;
-  status)
+	status)
 		/bin/echo -en "${APP_NAME^^} is.. " >&2
 		if check_app_status; then
 			/bin/echo -e " ${GREEN}running${NC} (${instance_id})" >&2
@@ -244,7 +244,7 @@ case "$1" in
 			exit 1
 		fi
 	;;
-  *)
+	*)
 		echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
 		exit 1
 	;;
