@@ -1,5 +1,6 @@
 require "rubygems"
 require "sinatra/base"
+require "sinatra/json"
 require "json"
 begin
   require "googlecharts"
@@ -8,14 +9,57 @@ rescue LoadError
 end
 
 class MyAPI < Sinatra::Base
+  helpers Sinatra::JSON
 
   configure :production, :development do
     enable :logging
     set :public_folder, File.dirname(__FILE__) + '/static'
+    set :json_encoder, :to_json
+  end
+
+  before do
+    # connect to DB
+    # recalulate splines 
+  end
+
+  after do
+    # disconnect from DB
+    # do other stuff
+  end
+
+  # pre-defined messages
+  nu   = {"code" => "400", "message" => "not understood"}
+  nf   = {"code" => "404", "message" => "not found"}
+  ni   = {"code" => "405", "message" => "not implemented"}
+  boom = {"code" => "500", "message" => "boom!"}
+
+  # custom error handling
+  error 400 do
+    json nu
+  end
+
+  error 404 do
+    json nf
+  end
+
+  error 405 do
+    json ni
+  end
+
+  error 500..599 do
+    json boom
   end
 
   get '/' do 
     redirect '/welcome?arg1=value1&arg2=value2&arg3'
+  end
+
+  get '/favicon.ico' do
+    halt 404
+  end
+
+  get '/tryme' do
+    halt 405
   end
 
   get '/welcome' do
@@ -51,6 +95,5 @@ class MyAPI < Sinatra::Base
     msg << "<p>Sinatra Documentation can be found here: <a href='http://www.sinatrarb.com/faq.html'>http://www.sinatrarb.com/faq.html</a>"
     msg
   end
-
 
 end
