@@ -6,7 +6,7 @@
 
 ## Installing dependencies
     sudo apt-get install ruby1.9.1 ruby1.9.1-dev build-essential
-    sudo gem1.9.1 install json unicorn sinatra sinatra-contrib
+    sudo gem1.9.1 install json thin unicorn sinatra sinatra-contrib
   additional dependencies can be installed via "apt-get" if available or "gem"
 
 ## Starting/Stopping API Server via INIT script
