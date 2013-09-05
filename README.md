@@ -1,8 +1,13 @@
-# Simple API Server in Ruby with Sinatra and Unicorn
+# Simple API Server in Ruby with Sinatra and Thin/Unicorn.
+Simple API example with Ruby's Sinatra, Thin/Unicorn, init script, Docker and super-duper self-install script.
 ## Requirements
  * ruby1.9.x
- * unicorn
+ * thin / unicorn
  * sinatra
+
+## Optional Requirements
+ * lxc container support
+ * linux kernel 3.8+ with aufs
 
 ## Installing dependencies
     sudo apt-get install ruby1.9.1 ruby1.9.1-dev build-essential
@@ -45,6 +50,6 @@
 
 ## Linux Containers and Docker
   you can launch your API Server in a LXC with Docker
-  check out _engage.sh_
+  check out _.docker/engage.sh_
 
     ./engage.sh [start|stop|restart|status]
