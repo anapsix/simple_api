@@ -2,8 +2,6 @@
 
 ###### begin user configurable options ######
 
-DEBUG=true
-
 APP_LAUNCH="/srv/simple_api/api_server.init restart"
 APP_PORT=8888
 EXPOSED_PORT=8889
@@ -30,15 +28,24 @@ warn() {
 	/bin/echo -en "${YELLOW}WARNING:${NC} $@" >&2
 }
 
+ok() {
+	/bin/echo -en "${GREEN}ok${NC}" >&2
+}
+
 if [[ "$(grep -Po '^\d+' /etc/debian_version || echo 0)" -ne "7" ]] || [[ "$(grep -Po Ubuntu /etc/issue)" == "Ubuntu" ]]; then
   warn "only Debian Wheezy is 100% supported, but this should work on Ubuntu, continuing..\n"
 fi
 
-echo -e "${YELLOW}WARNING:${NC} this script requires running few things as root" >&2
-echo "We are going to test if you can run sudo now.." >&2
-if [ "$(sudo id -u)" != "0" ]; then
-  error "sorry, you failed \"sudo\" check, bailing.."
-  exit 1
+warn "this script requires running few things as root... " >&2
+if timeout 0.2 sudo id > /dev/null; then
+	ok
+	echo
+else
+	echo -e "let's try your sudo powers\n" >&2
+	if [ "$(sudo id -u)" != "0" ]; then
+	  error "sorry, you failed \"sudo\" check, bailing.."
+	  exit 1
+	fi
 fi
 
 self_path="$(readlink -e $0)"
@@ -141,27 +148,17 @@ status_docker() {
 }
 
 install_n_check_app_deps() {
-	if [ ! -r ${MINIMALL_PATH} ]; then
-		error "Minimall path is not readable at ${MINIMALL_PATH}, exiting.."
+	# insert custom dependency check here
+	if ! which bundle > /dev/null; then
+		warn "bundler is cannot be found in PATH; it can be installed \"gem install bundler\"\n"
+		read "Hit [ENTER] to install bundler or [CTRL-C] to bail.." && \
+		sudo gem install bundler || error "could not install bundler, bailing.."
 	fi
 
-	sudo chgrp www-data -R ${TEMPLATES_PATH} > /dev/null 2>&1 || error "unable to change permissions on Minimall Templates (${TEMPLATES_PATH}), exiting.."
-	sudo chmod g+w -R ${TEMPLATES_PATH} > /dev/null 2>&1 || error "unable to change permissions on Minimall Templates (${TEMPLATES_PATH}), exiting.."
-
-	if [ ! -d ${LOGDIR} ]; then
-		if ! mkdir -p ${LOGDIR} > /dev/null 2>&1; then
-			error "cannot create LOGDIR at ${LOGDIR}, exiting.."
-		fi
-	fi
-
-	if [ ! -d ${MINIMALL_DB_PATH} ]; then
-		warn "attempting to rsync Minimall DB to ${MINIMALL_DB_PATH}..\n"
-		if mkdir -p ${MINIMALL_DB_PATH} > /dev/null 2>&1; then
-			rsync -rltoDvH --delete root@ops::minimall_db ${MINIMALL_DB_PATH} || error "failed to rsync Minimall DB to ${MINIMALL_DB_PATH}"
-		else
-			error "Minimall DB path cannot be created at ${MINIMALL_DB_PATH}, exiting.."
-		fi
-	fi
+	warn "running bundler.. "
+	bundle install --deployment --clean > /dev/null && ok || error "failed"
+	echo
+	return 0
 }
 
 enable_forwarding
@@ -223,22 +220,12 @@ if ! image_present ${DOCKER_IMAGE}; then
 	fi
 fi
 
-# check APP dependencies
-install_n_check_app_deps
-
-if $DEBUG; then	
-	echo "Aplication name: ${APP_NAME}" >&2
-	echo "Aplication directory: ${APP_DIR}" >&2
-fi
-
 start_app() {
-
-
 	instance_id=$(sudo $docker_bin run \
 		-d \
 		-dns ${DNS_SERVER} \
 		-p ${EXPOSED_PORT}:${APP_PORT} \
-    ${SSH_FORWARD} \
+		${SSH_FORWARD} \
 		-e container=lxc \
 		-v ${APP_DIR}:/srv/${APP_NAME} \
 		-t ${DOCKER_IMAGE} \
@@ -253,7 +240,7 @@ stop_app() {
 	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
 		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 		instance_id=$(cat $instance_file)
-		sudo $docker_bin stop -t=1 $instance_id
+		sudo $docker_bin stop -t=1 $instance_id > /dev/null
 		return $?
 	else
 		return 1
@@ -288,7 +275,10 @@ check_app_status() {
 case "$1" in
 	start)
 
-	if [ $[${SSH_PORT}/1] -gt 0 ]; then
+	# check APP dependencies
+	install_n_check_app_deps
+
+	if [ $[${SSH_PORT:-false}/1] -gt 0 ]; then
 		warn "SSH port forwarding is enabled; you may use \"ssh -p${SSH_PORT} root@127.0.0.1\" to get in..\n"
 		SSH_FORWARD="-p ${SSH_PORT}:22"
 	fi

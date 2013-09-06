@@ -9,3 +9,6 @@ logs
 # tmp
 tmp
 
+# bundler things
+.bundle
+vendor
