@@ -11,6 +11,7 @@
 
 NAME="API Server"
 LISTEN_PORT=8888
+# LISTEN_PORT=$[8000+RANDOM%1000] # use this for random port in 8000-9000 range
 SERVER="thin" # only unicorn and thin are supported at the moment.. feel free to add more
 
 export LISTEN_PORT
@@ -111,7 +112,7 @@ case $1 in
       /bin/echo -e "${NAME} is ${GREEN}already running${NC}" >&2
       exit 0
     else
-      log_daemon_msg "Starting ${NAME}" ${SERVER}
+      log_daemon_msg "Starting ${NAME}" "${SERVER} on port ${LISTEN_PORT}"
       start_server
       log_end_msg $?
     fi

@@ -1,6 +1,9 @@
 require "rubygems"
 require "sinatra"
+require "bundler"
 
-require File.expand_path '../api.rb', __FILE__
+Bundler.require
+
+require File.expand_path('../api.rb',__FILE__)
 
 run MyAPI

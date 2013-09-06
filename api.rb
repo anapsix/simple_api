@@ -1,7 +1,3 @@
-require "rubygems"
-require "sinatra/base"
-require "sinatra/json"
-require "json"
 begin
   require "googlecharts"
 rescue LoadError
@@ -10,6 +6,7 @@ end
 
 class MyAPI < Sinatra::Base
   helpers Sinatra::JSON
+  use Rack::Cache
 
   configure :production, :development do
     enable :logging
@@ -18,6 +15,7 @@ class MyAPI < Sinatra::Base
   end
 
   before do
+    cache_control :public, :must_revalidate, :max_age => 3600
     # connect to DB
     # recalulate splines 
   end

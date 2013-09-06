@@ -11,8 +11,9 @@ DOCKER_IMAGE='ruby1.9/sinatra'
 
 ####### end user configurable options #######
 
+DNS_SERVER="10.23.10.15"
 DOCKER_PIDFILE=/var/run/docker.pid
-DOCKER_OPTIONS="-d -H="127.0.0.1:4243" -H="unix:///var/run/docker.sock" -api-enable-cors"
+DOCKER_OPTIONS='-d -H="127.0.0.1:4243" -H="unix:///var/run/docker.sock" -api-enable-cors'
 
 RED='\e[1;31m'
 GREEN='\e[1;32m'
@@ -29,6 +30,10 @@ warn() {
 	/bin/echo -en "${YELLOW}WARNING:${NC} $@" >&2
 }
 
+if [[ "$(grep -Po '^\d+' /etc/debian_version || echo 0)" -ne "7" ]] || [[ "$(grep -Po Ubuntu /etc/issue)" == "Ubuntu" ]]; then
+  warn "only Debian Wheezy is 100% supported, but this should work on Ubuntu, continuing..\n"
+fi
+
 echo -e "${YELLOW}WARNING:${NC} this script requires running few things as root" >&2
 echo "We are going to test if you can run sudo now.." >&2
 if [ "$(sudo id -u)" != "0" ]; then
@@ -41,7 +46,7 @@ APP_DIR="${self_path%%/.docker\/${self_path##*/}}"
 APP_NAME=${APP_DIR##*/}
 DOCKER_DIR="${APP_DIR}/.docker"
 
-REQUIRED_PACKAGES=( curl git make:build-essential tee:coreutils htop )
+REQUIRED_PACKAGES=( curl git make:build-essential tee:coreutils lxc brctl:bridge-utils)
 
 # checking paths
 #echo "self_path=${self_path}"
@@ -61,7 +66,7 @@ check_bin() {
 	_bin=${1%:*}
 	_package=${1/${1%:*}:}
 	[ -n ${_package} ] || _package=${bin}
-	which $_bin >/dev/null || missing_packages+=( $_package )
+	sudo which $_bin >/dev/null || missing_packages+=( $_package )
 }
 
 for _bin in ${REQUIRED_PACKAGES[@]}; do
@@ -70,8 +75,15 @@ done
 
 mount_cgroup() {
 	if ! grep -q '/cgroup' /etc/mtab; then
-		echo -e "#mount cgroup\nnone  /cgroup  cgroup  defaults  0 0" | sudo tee -a /etc/fstab >/dev/null
+		echo -e "\n#mount cgroup\nnone  /cgroup  cgroup  defaults  0 0" | sudo tee -a /etc/fstab >/dev/null
+		sudo mkdir /cgroup
 		sudo mount /cgroup 2>/dev/null && return 0 || return 1
+	fi
+}
+
+enable_forwarding() {
+	if [ "$(cat /proc/sys/net/ipv4/ip_forward)" -ne "1" ]; then
+		sudo sysctl net.ipv4.conf.all.forwarding=1
 	fi
 }
 
@@ -90,8 +102,6 @@ install_docker() {
 	RETVAL=$?
 	sudo cp /tmp/docker-debian/bin/docker /usr/local/bin/docker
 	mount_cgroup
-	sudo sysctl net.ipv4.conf.all.forwarding=1
-	echo net.ipv4.conf.all.forwarding=1 | sudo tee /etc/sysctl.d/net.ipv4.forwarding.conf 2>/dev/null
 	return $RETVAL
 }
 
@@ -116,6 +126,7 @@ start_docker() {
 	sudo start-stop-daemon --start --background --pidfile $DOCKER_PIDFILE --exec $docker_bin -- $DOCKER_OPTIONS
 	RETVAL=$?
 	sleep 3
+	sudo chmod 777 /var/run/docker.sock
 	return $RETVAL
 }
 
@@ -129,10 +140,36 @@ status_docker() {
 	return $?
 }
 
+install_n_check_app_deps() {
+	if [ ! -r ${MINIMALL_PATH} ]; then
+		error "Minimall path is not readable at ${MINIMALL_PATH}, exiting.."
+	fi
+
+	sudo chgrp www-data -R ${TEMPLATES_PATH} > /dev/null 2>&1 || error "unable to change permissions on Minimall Templates (${TEMPLATES_PATH}), exiting.."
+	sudo chmod g+w -R ${TEMPLATES_PATH} > /dev/null 2>&1 || error "unable to change permissions on Minimall Templates (${TEMPLATES_PATH}), exiting.."
+
+	if [ ! -d ${LOGDIR} ]; then
+		if ! mkdir -p ${LOGDIR} > /dev/null 2>&1; then
+			error "cannot create LOGDIR at ${LOGDIR}, exiting.."
+		fi
+	fi
+
+	if [ ! -d ${MINIMALL_DB_PATH} ]; then
+		warn "attempting to rsync Minimall DB to ${MINIMALL_DB_PATH}..\n"
+		if mkdir -p ${MINIMALL_DB_PATH} > /dev/null 2>&1; then
+			rsync -rltoDvH --delete root@ops::minimall_db ${MINIMALL_DB_PATH} || error "failed to rsync Minimall DB to ${MINIMALL_DB_PATH}"
+		else
+			error "Minimall DB path cannot be created at ${MINIMALL_DB_PATH}, exiting.."
+		fi
+	fi
+}
+
+enable_forwarding
+
 # install missing packages if any
 if [ "${#missing_packages[@]}" -gt 0 ]; then
 	warn "Missing packages: ${missing_packages[@]}, going to install them..\n"
-	sudo apt-get install -y ${missing_packages[@]}
+	sudo apt-get install -y ${missing_packages[@]} || error "could not install required packages, bailing.."
 fi
 
 if [ "${docker_bin}" == "missing" ]; then
@@ -171,7 +208,8 @@ fi
 # make sure docker is running
 if ! status_docker; then
 	warn "Docker is NOT running, trying to start it..\n"
-	start_docker || error "failed to start Docker, bailing.."
+	start_docker
+	status_docker || error "failed to start Docker, bailing.."
 fi
 
 if ! image_present ${DOCKER_IMAGE}; then
@@ -185,6 +223,8 @@ if ! image_present ${DOCKER_IMAGE}; then
 	fi
 fi
 
+# check APP dependencies
+install_n_check_app_deps
 
 if $DEBUG; then	
 	echo "Aplication name: ${APP_NAME}" >&2
@@ -192,9 +232,13 @@ if $DEBUG; then
 fi
 
 start_app() {
+
+
 	instance_id=$(sudo $docker_bin run \
 		-d \
+		-dns ${DNS_SERVER} \
 		-p ${EXPOSED_PORT}:${APP_PORT} \
+    ${SSH_FORWARD} \
 		-e container=lxc \
 		-v ${APP_DIR}:/srv/${APP_NAME} \
 		-t ${DOCKER_IMAGE} \
@@ -209,7 +253,7 @@ stop_app() {
 	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
 		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 		instance_id=$(cat $instance_file)
-		sudo $docker_bin stop $instance_id
+		sudo $docker_bin stop -t=1 $instance_id
 		return $?
 	else
 		return 1
@@ -219,7 +263,7 @@ stop_app() {
 restart_app() {
 	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
 		instance_id=$(cat /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id)
-		sudo $docker_bin restart $instance_id
+		sudo $docker_bin restart -t=1 $instance_id
 		return $?
 	else
 		return 1
@@ -243,6 +287,11 @@ check_app_status() {
 
 case "$1" in
 	start)
+
+	if [ $[${SSH_PORT}/1] -gt 0 ]; then
+		warn "SSH port forwarding is enabled; you may use \"ssh -p${SSH_PORT} root@127.0.0.1\" to get in..\n"
+		SSH_FORWARD="-p ${SSH_PORT}:22"
+	fi
 
 		if check_app_status; then
 			/bin/echo -e "${APP_NAME^^} is ${GREEN}already running${NC} (${instance_id})" >&2
