@@ -5,7 +5,7 @@
 APP_LAUNCH="/srv/simple_api/api_server.init restart"
 APP_PORT=8888
 EXPOSED_PORT=8889
-DOCKER_IMAGE='ruby1.9/sinatra'
+DOCKER_IMAGE='anapsix/ruby1.9'
 
 ####### end user configurable options #######
 
@@ -41,7 +41,7 @@ if timeout 0.2 sudo id > /dev/null; then
 	ok
 	echo
 else
-	echo -e "let's try your sudo powers\n" >&2
+	echo -e "let's check your sudo powers" >&2
 	if [ "$(sudo id -u)" != "0" ]; then
 	  error "sorry, you failed \"sudo\" check, bailing.."
 	  exit 1
@@ -155,8 +155,8 @@ install_n_check_app_deps() {
 		sudo gem install bundler || error "could not install bundler, bailing.."
 	fi
 
-	warn "running bundler.. "
-	bundle install --deployment --clean > /dev/null && ok || error "failed"
+	warn "running bundler.."
+	bundle install --deployment --clean > /dev/null && ok || sed -si '/BUNDLE_FROZEN/s/1/0/' .bundle/config && bundle install > /dev/null && bundle install --deployment > /dev/null || error "failed.."
 	echo
 	return 0
 }
@@ -272,6 +272,27 @@ check_app_status() {
 	fi
 }
 
+get_app_logs() {
+	if [ -r /var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id ]; then
+		instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
+		instance_id=$(cat $instance_file)
+		warn "displaying logs for ${instance_id}\n"
+		echo "########### logs for ${instance_id} begin ###########"
+		sudo $docker_bin logs $instance_id
+		echo "############ logs for ${instance_id} end ############"
+		return $?
+	elif instance_id=$(sudo $docker_bin ps -a | grep -m 1 "${DOCKER_IMAGE}" | awk '{print $1}'); then
+		warn "could not determine container id, displaying logs for ${instance_id} - last known instance based on ${DOCKER_IMAGE}\n"
+		echo "########### logs for ${instance_id} ###########"
+		sudo $docker_bin logs $instance_id
+		echo "############ logs for ${instance_id} end ############"
+		return $?
+	else
+		error "could not find neither running nor stopped instance of ${APP_NAME} @ ${DOCKER_IMAGE}"
+		return 1
+	fi
+}
+
 case "$1" in
 	start)
 
@@ -331,6 +352,9 @@ case "$1" in
 			/bin/echo -e " ${RED}not running${NC}" >&2
 			exit 1
 		fi
+	;;
+	log*)
+		get_app_logs
 	;;
 	*)
 		echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2

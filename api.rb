@@ -94,4 +94,9 @@ class MyAPI < Sinatra::Base
     msg
   end
 
+  get '*' do
+    halt 405
+  end
+
+
 end
