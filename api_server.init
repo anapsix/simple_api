@@ -30,6 +30,10 @@ DIR="${self_path%%/${self_path##*/}}"
 PRODUCT_HOME=${DIR%/*}
 API_HOME=${DIR}
 
+# set ENVIRONMENT to "development" is .pd or .dev* files are detected
+[ -e $API_HOME/.pd ] || [ -e $API_HOME/.dev* ] && ENVIRONMENT="development"
+[ -e $PRODUCT_HOME/.pd ] || [ -e $PRODUCT_HOME/.dev* ] && ENVIRONMENT="development"
+
 cd $API_HOME
 
 [ -r $API_HOME/tmp ] || mkdir $API_HOME/tmp
