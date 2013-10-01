@@ -11,7 +11,7 @@ DOCKER_IMAGE='anapsix/ruby1.9'
 
 DNS_SERVER="10.23.10.15"
 DOCKER_PIDFILE=/var/run/docker.pid
-DOCKER_OPTIONS='-d -H="127.0.0.1:4243" -H="unix:///var/run/docker.sock" -api-enable-cors'
+DOCKER_OPTIONS='-d -H 127.0.0.1:4243 -H unix:///var/run/docker.sock -api-enable-cors'
 
 RED='\e[1;31m'
 GREEN='\e[1;32m'
