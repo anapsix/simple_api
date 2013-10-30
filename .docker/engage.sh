@@ -4,7 +4,7 @@
 
 APP_LAUNCH="/srv/simple_api/api_server.init restart"
 APP_PORT=8888
-EXPOSED_PORT=8889
+EXPOSED_PORT=8081
 DOCKER_IMAGE='anapsix/ruby1.9'
 
 ####### end user configurable options #######

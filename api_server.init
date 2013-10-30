@@ -81,7 +81,7 @@ case $SERVER in
     LOGFILE=$API_HOME/log/thin.log
 
     function start_server() {
-      thin start -e ${ENVIRONMENT:-development} $DAEMON_FLAG --port ${LISTEN_PORT:-8888} --log $LOGFILE --pid $PIDFILE
+      bundle exec thin start -e ${ENVIRONMENT:-development} $DAEMON_FLAG --port ${LISTEN_PORT:-8888} --log $LOGFILE --pid $PIDFILE
       return $?
     }
     function stop_server() {
