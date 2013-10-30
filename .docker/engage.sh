@@ -221,6 +221,10 @@ if ! image_present ${DOCKER_IMAGE}; then
 fi
 
 start_app() {
+	if [[ "$1" == "noop" ]]; then
+		warn "That's how we start container for ${APP_NAME}\n"
+		echo "sudo $docker_bin run -d -dns ${DNS_SERVER} -p ${EXPOSED_PORT}:${APP_PORT} ${SSH_FORWARD} -e container=lxc -v ${APP_DIR}:/srv/${APP_NAME} -t ${DOCKER_IMAGE} ${APP_LAUNCH}"
+	else
 	instance_id=$(sudo $docker_bin run \
 		-d \
 		-dns ${DNS_SERVER} \
@@ -233,6 +237,7 @@ start_app() {
 	instance_file="/var/tmp/${APP_NAME}_${EXPOSED_PORT}_${APP_PORT}.id"
 	RETVAL=$?
 	echo $instance_id > $instance_file
+	fi
 	return $RETVAL
 }
 
@@ -294,6 +299,25 @@ get_app_logs() {
 }
 
 case "$1" in
+	nostart)
+	# check APP dependencies
+	install_n_check_app_deps
+
+	if [ $[${SSH_PORT:-false}/1] -gt 0 ]; then
+		warn "SSH port forwarding is enabled; you may use \"ssh -p${SSH_PORT} root@127.0.0.1\" to get in..\n"
+		SSH_FORWARD="-p ${SSH_PORT}:22"
+	fi
+
+		if check_app_status; then
+			/bin/echo -e "${APP_NAME^^} is ${GREEN}already running${NC} (${instance_id})" >&2
+		else
+			if start_app noop; then
+				exit 0
+			else
+				exit 1
+			fi
+		fi
+	;;
 	start)
 
 	# check APP dependencies
