@@ -9,8 +9,6 @@ RUN gem1.9.1 install sinatra thin bundler rack rake --no-ri --no-rdoc
 
 ENV contrainer lxc
 
-EXPOSE 8888
-
 # uncomment when building an appliance
 # Bundle app source
 #ADD . /srv/simple_api
