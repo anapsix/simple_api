@@ -1,0 +1,280 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:        simple_api
+# Required-Start:  $network $remote_fs $syslog
+# Required-Stop:   $network $remote_fs $syslog
+# Default-Start:   2 3 4 5
+# Default-Stop: 
+# Short-Description: start simple_api service
+### END INIT INFO
+
+# self-discovery and path
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/var/lib/gems/1.9.1/bin:/usr/local/bin
+self_path="$(readlink -e $0)"
+DIR="${self_path%%/${self_path##*/}}"
+PRODUCT_HOME=${DIR%/*}
+API_HOME=${DIR}
+BUNDLER_BIN=$(which bundle)
+
+#
+##
+### config setting, overwritten by /etc/default/${NAME} or $INIT_CONFIG, if present ###
+NAME="simple_api"
+LISTEN_IP="0.0.0.0"       # listen IP, default is 127.0.0.1
+LISTEN_PORT=8888          # listen port, if unset defaults to random in 8000-9000 range
+SERVER="puma"             # puma, unicorn, thin are supported.. add more
+ENVIRONMENT="production"  # set RACK_ENV to "production", defaults to "development"
+                          # if .pd or .dev* detected in API_HOME, resets to "development"
+RUN_USER=""               # start service as this user, default to root if unset
+### config setting, overwritten by $INIT_CONFIG, if present ###
+##
+#
+
+#
+##
+### load settings from config file, if present and readable
+INIT_CONFIG=${API_HOME}/${NAME}.default
+# /etc/default/${NAME} takes precedence
+if [ -r /etc/default/${NAME} ]; then
+  . /etc/default/${NAME}
+elif [ -r ${INIT_CONFIG} ]; then
+  . ${INIT_CONFIG}
+fi
+### load settings from config file, if present and readable
+##
+#
+
+
+. /lib/lsb/init-functions
+
+
+#
+##
+### colors
+RED='\e[0;31m'
+GREEN='\e[0;32m'
+YELLOW='\e[0;33m'
+PURPLE='\e[0;35m'
+NC='\e[0m'
+### colors
+##
+#
+
+
+#
+##
+### run as RUN_USER if set
+if [[ -n "$RUN_USER" ]]; then
+  SUDO_START="sudo -u ${RUN_USER} PATH=${PATH}"
+  chown -R ${RUN_USER} ${API_HOME}
+fi
+### run as RUN_USER if set
+##
+#
+
+
+#
+##
+### set ENVIRONMENT to "development" if .pd or .dev* files are detected
+if [ -e $API_HOME/.pd ] || [ -e $API_HOME/.dev* ] || [ -e $PRODUCT_HOME/.pd ] || [ -e $PRODUCT_HOME/.dev* ]; then
+  echo -e "${YELLOW}WARNING:${NC} .pd/.dev* detected" >&2
+  [ "$ENVIRONMENT" != "development" ] && echo -e "${YELLOW}WARNING:${NC} ignoring config setting of \"${YELLOW}${ENVIRONMENT}${NC}\"" >&2
+  echo -e "${YELLOW}WARNING:${NC} ENVIRONMENT is reset to \"${YELLOW}development${NC}\"" >&2
+  ENVIRONMENT="development"
+fi
+### set ENVIRONMENT to "development" if .pd or .dev* files are detected
+##
+#
+
+
+#
+##
+### cd into make ./tmp and ./log
+cd $API_HOME
+[ -r $API_HOME/tmp ] || mkdir $API_HOME/tmp
+[ -r $API_HOME/log ] || mkdir $API_HOME/log
+###
+##
+#
+
+
+#
+##
+### just in case you didn't run bundle install
+check_server_availability() {
+  _server="${1}"
+  $BUNDLER_BIN show $_server >/dev/null 2>&1
+  return $?
+}
+### just in case you didn't run bundle install
+##
+#
+
+
+
+if ! check_server_availability $SERVER; then
+  echo "${SERVER^^} is not available, check you Gemfile and/or run \"bundle install\"" 2>&1
+  exit 1
+fi
+
+send_kill_signal() {
+  _HANDLER=${1:-$SERVER}
+  _KILL_SIGNAL=${2:-0}
+  _PIDFILE=${API_HOME}/tmp/${_HANDLER}.pid
+  _LOGFILE=${API_HOME}/log/${_HANDLER}.log
+
+  if [ ! -r ${_PIDFILE} ]; then
+    #echo "Could not read PIDFILE (${_PIDFILE})" >&2
+    return 1
+  elif kill -${_KILL_SIGNAL} $(cat $_PIDFILE) >/dev/null 2>&1; then
+     return 0
+  else
+    # echo "Failed to send ${_KILL_SIGNAL} to $(cat ${_PIDFILE})"
+    return 1
+  fi
+}
+
+status_server() {
+  _HANDLER=${1:-$SERVER}
+  _KILL_SIGNAL="0"
+
+  send_kill_signal ${_HANDLER} ${_KILL_SIGNAL}
+  return $?
+}
+
+reload_server() {
+  _HANDLER=${1:-$SERVER}
+  _KILL_SIGNAL=${2:-"USR2"}
+
+  send_kill_signal ${_HANDLER} ${_KILL_SIGNAL}
+  return $?
+}
+
+stop_server() {
+  _HANDLER=${1:-$SERVER}
+  _KILL_SIGNAL=${2:-"SIGTERM"}
+  _LOGFILE=${API_HOME}/log/${_HANDLER}.log
+
+  if send_kill_signal ${_HANDLER} ${_KILL_SIGNAL}; then
+   sleep 0.5
+   rm -f ${_PIDFILE} >/dev/null 2>&1
+  else
+   return 1
+  fi
+}
+
+# run in foreground when in Docker LXC container
+[ "$container" == "lxc" ] && DAEMONIZE="" || DAEMONIZE=true
+
+# customize start_server function and more per server type
+case $SERVER in
+  puma)
+    function start_server() {
+      $SUDO_START $BUNDLER_BIN exec puma \
+                                      ${DAEMONIZE:+"-d"}                                                       \
+                                      --environment ${ENVIRONMENT:-development}                                \
+                                      --pidfile ${API_HOME}/tmp/${_HANDLER}.pid                                \
+                                      --bind tcp://${LISTEN_IP:=127.0.0.1}:${LISTEN_PORT:=$[8000+RANDOM%1000]} \
+                                      --workers 2                                                              \
+                                      --preload >> ${API_HOME}/log/${_HANDLER}.log 2>&1
+      return $?
+    }
+
+  ;;
+  unicorn)
+    function start_server() {
+      $SUDO_START $BUNDLER_BIN exec unicorn \
+                                      ${DAEMONIZE:+"-D"}                         \
+                                      --env ${ENVIRONMENT:-development}          \
+                                      --host ${LISTEN_IP:=127.0.0.1}             \
+                                      --port ${LISTEN_PORT:=$[8000+RANDOM%1000]} \
+                                      --config-file ./unicorn.rb
+      return $?
+    }
+  ;;
+
+  thin)
+    function start_server() {
+      $SUDO_START $BUNDLER_BIN exec thin start \
+                                           ${DAEMONIZE:+"-d"}                       \
+                                           --environment ${ENVIRONMENT:-development}  \
+                                           --address ${LISTEN_IP:=127.0.0.1}          \
+                                           --port ${LISTEN_PORT:=$[8000+RANDOM%1000]} \
+                                           --pid $PIDFILE                             \
+                                           --log $LOGFILE
+      return $?
+    }
+  ;;
+  *)
+    echo "${SERVER} not supported, bailing..." >&2
+    exit 1
+  ;;
+esac
+
+case $1 in
+  start)
+    if status_server >/dev/null 2>&1; then
+      /bin/echo -e "${NAME}/${SERVER} is ${GREEN}already running${NC}" >&2
+      exit 0
+    else
+      log_daemon_msg "starting ${NAME}" "${SERVER} (${LISTEN_IP}:${LISTEN_PORT})"
+      start_server
+      log_end_msg $?
+    fi
+  ;;
+  stop)
+    if status_server >/dev/null 2>&1; then
+      log_daemon_msg "stopping ${NAME}" ${SERVER}
+      stop_server
+      log_end_msg $?
+    else
+      log_daemon_msg "${NAME}/${SERVER} is not running"
+      log_end_msg 1
+    fi
+  ;;
+  restart)
+    if status_server >/dev/null 2>&1; then
+      log_daemon_msg "stopping ${NAME}/${SERVER}"
+      stop_server
+      log_end_msg $?
+      sleep 1
+      log_daemon_msg "starting ${NAME}" "${SERVER} (${LISTEN_IP}:${LISTEN_PORT})"
+      start_server
+      log_end_msg $?
+    else
+      log_daemon_msg "${NAME}/${SERVER} is not running"
+      echo
+      log_daemon_msg "starting ${NAME}" "${SERVER} (${LISTEN_IP}:${LISTEN_PORT})"
+      start_server
+      log_end_msg $?
+    fi
+  
+  ;;
+  reload)
+    if status_server >/dev/null 2>&1; then
+      log_daemon_msg "reloading ${NAME}" ${SERVER}
+      reload_server
+      log_end_msg $?
+    else
+      log_daemon_msg "${NAME}" "${SERVER} is not running"
+      log_end_msg 1
+    fi
+  ;;
+  status)
+   /bin/echo -en "${NAME}/${SERVER} is.. " >&2
+   if status_server; then
+     /bin/echo -e "${GREEN}running${NC}" >&2
+     exit 0
+   else
+     /bin/echo -e "${RED}not running${NC}" >&2
+     exit 1
+   fi
+  ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}" >&2
+    exit 2
+  ;;
+esac
+
+exit 0

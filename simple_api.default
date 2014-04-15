@@ -1,0 +1,12 @@
+# Example config, read by simple_api.init if this file exists
+# you may override the following values here or set your own
+
+# NAME="simple_api"
+# LISTEN_IP="0.0.0.0"       # listen IP, default is 127.0.0.1
+# LISTEN_PORT=8888          # listen port, if unset defaults to random in 8000-9000 range
+# SERVER="thin"             # puma, unicorn, thin are supported.. add more
+# ENVIRONMENT="production"  # set RACK_ENV to "production", defaults to "development"
+                          # if .pd or .dev* detected in API_HOME, resets to "development"
+# RUN_USER=""               # start service as this user, default to root if unset
+
+# EOF

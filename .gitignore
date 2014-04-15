@@ -12,3 +12,8 @@ tmp
 # bundler things
 .bundle
 vendor
+
+
+# dev flags
+.pd
+.dev*
