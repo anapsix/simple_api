@@ -6,13 +6,15 @@ gem 'json', :require => 'json'
 gem 'sinatra', :require => 'sinatra/base'
 gem 'sinatra-contrib', :require => 'sinatra/json'
 
-# sometimes I use these in DEV envitonment
-#group :development do
-#  gem 'thin'
-#  gem 'unicorn'
-#end
+group :thin do
+  gem 'thin'
+end
 
-group :production do
-	gem 'puma'
+group :unicorn do
+  gem 'unicorn'
+end
+
+group :puma do
+  gem 'puma'
 end
 
