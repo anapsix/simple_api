@@ -27,6 +27,9 @@ SERVER="puma"             # puma, unicorn, thin are supported.. add more
 ENVIRONMENT="production"  # set RACK_ENV to "production", defaults to "development"
                           # if .pd or .dev* detected in API_HOME, resets to "development"
 RUN_USER=""               # start service as this user, default to root if unset
+###########################
+PIDFILE=${API_HOME}/tmp/${SERVER}.pid
+LOGFILE=${API_HOME}/log/${SERVER}.log
 ### config setting, overwritten by $INIT_CONFIG, if present ###
 ##
 #
@@ -90,10 +93,11 @@ fi
 
 #
 ##
-### cd into make ./tmp and ./log
+### cd into make ./tmp and ./log, misc
 cd $API_HOME
 [ -r $API_HOME/tmp ] || mkdir $API_HOME/tmp
 [ -r $API_HOME/log ] || mkdir $API_HOME/log
+export SERVER
 ###
 ##
 #
@@ -119,46 +123,39 @@ if ! check_server_availability $SERVER; then
 fi
 
 send_kill_signal() {
-  _HANDLER=${1:-$SERVER}
-  _KILL_SIGNAL=${2:-0}
-  _PIDFILE=${API_HOME}/tmp/${_HANDLER}.pid
-  _LOGFILE=${API_HOME}/log/${_HANDLER}.log
+  _KILL_SIGNAL=${1:-0}
 
-  if [ ! -r ${_PIDFILE} ]; then
-    #echo "Could not read PIDFILE (${_PIDFILE})" >&2
+  if [ ! -r ${PIDFILE} ]; then
+    #echo "Could not read PIDFILE (${PIDFILE})" >&2
     return 1
-  elif kill -${_KILL_SIGNAL} $(cat $_PIDFILE) >/dev/null 2>&1; then
+  elif kill -${_KILL_SIGNAL} $(cat $PIDFILE) >/dev/null 2>&1; then
      return 0
   else
-    # echo "Failed to send ${_KILL_SIGNAL} to $(cat ${_PIDFILE})"
+    # echo "Failed to send ${_KILL_SIGNAL} to $(cat ${PIDFILE})"
     return 1
   fi
 }
 
 status_server() {
-  _HANDLER=${1:-$SERVER}
   _KILL_SIGNAL="0"
 
-  send_kill_signal ${_HANDLER} ${_KILL_SIGNAL}
+  send_kill_signal ${_KILL_SIGNAL}
   return $?
 }
 
 reload_server() {
-  _HANDLER=${1:-$SERVER}
-  _KILL_SIGNAL=${2:-"USR2"}
+  _KILL_SIGNAL=${1:-"USR2"}
 
-  send_kill_signal ${_HANDLER} ${_KILL_SIGNAL}
+  send_kill_signal ${_KILL_SIGNAL}
   return $?
 }
 
 stop_server() {
-  _HANDLER=${1:-$SERVER}
-  _KILL_SIGNAL=${2:-"SIGTERM"}
-  _LOGFILE=${API_HOME}/log/${_HANDLER}.log
+  _KILL_SIGNAL=${1:-"SIGTERM"}
 
-  if send_kill_signal ${_HANDLER} ${_KILL_SIGNAL}; then
+  if send_kill_signal ${_KILL_SIGNAL}; then
    sleep 0.5
-   rm -f ${_PIDFILE} >/dev/null 2>&1
+   rm -f ${PIDFILE} >/dev/null 2>&1
   else
    return 1
   fi
@@ -177,7 +174,7 @@ case $SERVER in
                                       --pidfile ${API_HOME}/tmp/${_HANDLER}.pid                                \
                                       --bind tcp://${LISTEN_IP:=127.0.0.1}:${LISTEN_PORT:=$[8000+RANDOM%1000]} \
                                       --workers 2                                                              \
-                                      --preload >> ${API_HOME}/log/${_HANDLER}.log 2>&1
+                                      --preload >> ${LOGFILE:-${API_HOME}/log/${SERVER}.log} 2>&1
       return $?
     }
 
@@ -197,12 +194,12 @@ case $SERVER in
   thin)
     function start_server() {
       $SUDO_START $BUNDLER_BIN exec thin start \
-                                           ${DAEMONIZE:+"-d"}                       \
-                                           --environment ${ENVIRONMENT:-development}  \
-                                           --address ${LISTEN_IP:=127.0.0.1}          \
-                                           --port ${LISTEN_PORT:=$[8000+RANDOM%1000]} \
-                                           --pid $PIDFILE                             \
-                                           --log $LOGFILE
+                                           ${DAEMONIZE:+"-d"}                              \
+                                           --environment ${ENVIRONMENT:-development}       \
+                                           --address ${LISTEN_IP:=127.0.0.1}               \
+                                           --port ${LISTEN_PORT:=$[8000+RANDOM%1000]}      \
+                                           --pid ${PIDFILE:-${API_HOME}/tmp/${SERVER}.pid} \
+                                           --log ${LOGFILE:-${API_HOME}/log/${SERVER}.log}
       return $?
     }
   ;;
