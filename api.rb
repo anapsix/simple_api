@@ -31,6 +31,18 @@ class MyAPI < Sinatra::Base
   ni   = {"code" => "405", "message" => "not implemented"}
   boom = {"code" => "500", "message" => "boom!"}
 
+  # detect handler
+  def handler?()
+    # use environmental variable if available 
+    return ENV["SERVER"].downcase unless ENV["SERVER"].nil?
+    # otherwise, detect it
+    if env["rack.hijack"] then
+      _handler = env["rack.hijack"].class.to_s[/^\w+/].downcase
+      return _handler if _handler != "proc"
+    end
+    return env["SERVER_SOFTWARE"][/^\w+/].downcase
+  end
+
   # custom error handling
   error 400 do
     json nu
@@ -63,9 +75,9 @@ class MyAPI < Sinatra::Base
   get '/welcome' do
     params = request.env['rack.request.query_hash']
     msg = ""
-    msg << "<p><left><img src='/sinatra_unicorn.png'><left>"
+    msg << "<p><left><img src='/sinatra_#{handler?}.png'><left>"
     msg << "<p><b>Welcome, this is an example API server running by the power of Ruby using <a href='http://www.sinatrarb.com'>Sinatra</a> / "
-    msg << "<a href='https://github.com/blog/517-unicorn'>Unicorn</a>!</b>"
+    msg << "<a href='https://github.com/blog/517-unicorn'>#{handler?}</a>!</b>"
     msg << "<br><br><p>System load (output of 'uptime') is..<br>#{%x[uptime]}<br>"
     $o = Array.new
     output = %x[ls -l / | tail -n3].gsub(/total.*\n/,"")
@@ -91,6 +103,10 @@ class MyAPI < Sinatra::Base
             :bar_colors => 'cc0000,00cc00') if defined?(Gchart)
     msg << "<p>Google Chart example using \"googlechart\" gem:<br><img src=#{chart}>" if defined?(Gchart)
     msg << "<p>Sinatra Documentation can be found here: <a href='http://www.sinatrarb.com/faq.html'>http://www.sinatrarb.com/faq.html</a>"
+    msg << "<p>Rack handler is:"
+    msg << "<pre>"
+    msg << handler?
+    msg << "</pre></p>"
     msg
   end
 
