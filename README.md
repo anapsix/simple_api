@@ -3,8 +3,8 @@ Simple API example with Ruby's Sinatra, Thin/Unicorn, init script, Docker and su
 ## Requirements
  * ruby1.9.x
   + bundler
-   - sinatra
-   - thin / unicorn / puma
+    - sinatra
+    - thin / unicorn / puma
 
 ## Optional Requirements
  * lxc container support
