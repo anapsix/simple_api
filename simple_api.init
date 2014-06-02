@@ -171,7 +171,7 @@ case $SERVER in
       $SUDO_START $BUNDLER_BIN exec puma \
                                       ${DAEMONIZE:+"-d"}                                                       \
                                       --environment ${ENVIRONMENT:-development}                                \
-                                      --pidfile ${API_HOME}/tmp/${_HANDLER}.pid                                \
+                                      --pidfile ${API_HOME}/tmp/${SERVER}.pid                                  \
                                       --bind tcp://${LISTEN_IP:=127.0.0.1}:${LISTEN_PORT:=$[8000+RANDOM%1000]} \
                                       --workers 2                                                              \
                                       --preload >> ${LOGFILE:-${API_HOME}/log/${SERVER}.log} 2>&1
