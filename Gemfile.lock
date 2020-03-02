@@ -7,7 +7,7 @@ GEM
     json (1.8.0)
     kgio (2.8.1)
     multi_json (1.7.9)
-    puma (3.12.2)
+    puma (3.12.3)
     rack (1.6.12)
     rack-cache (1.2)
       rack (>= 0.4)
