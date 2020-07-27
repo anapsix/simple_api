@@ -4,7 +4,7 @@ GEM
     backports (3.3.3)
     daemons (1.1.9)
     eventmachine (1.0.3)
-    json (1.8.0)
+    json (2.3.0)
     kgio (2.8.1)
     multi_json (1.7.9)
     puma (3.12.4)
